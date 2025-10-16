@@ -1,0 +1,1300 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Control de Enfermedades y Plagas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    
+    <style>
+        .enfermedad-card {
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        .enfermedad-card:hover {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .sintoma-tag {
+            background: #f3f4f6;
+            border-radius: 0.375rem;
+            padding: 0.25rem 0.5rem;
+            margin: 0.125rem;
+            display: inline-block;
+            border: 1px solid #d1d5db;
+        }
+        .btn-eliminar {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            font-size: 0.75rem;
+        }
+        .btn-eliminar:hover {
+            background: #dc2626;
+        }
+        .btn-editar {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            font-size: 0.75rem;
+            margin-left: 0.5rem;
+        }
+        .btn-editar:hover {
+            background: #2563eb;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            overflow: auto;
+        }
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 20px;
+            border-radius: 0.5rem;
+            width: 90%;
+            max-width: 600px;
+            position: relative;
+            animation: fadeIn 0.3s ease-out;
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover {
+            color: black;
+        }
+        #mapaModal, #mapaContainer, #mapaGeneral {
+            height: 400px;
+            border-radius: 0.5rem;
+            border: 1px solid #d1d5db;
+        }
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 16px;
+            border-radius: 0.5rem;
+            color: white;
+            z-index: 1001;
+            min-width: 300px;
+            animation: slideIn 0.3s ease;
+        }
+        .toast.success { background: #10b981; }
+        .toast.error { background: #ef4444; }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Dark Mode Styles */
+        .dark .bg-gray-100 { background-color: #111827; }
+        .dark .text-gray-800 { color: #d1d5db; }
+        .dark .enfermedad-card {
+            background: #374151;
+            border-color: #4b5563;
+        }
+        .dark .sintoma-tag {
+            background: #4b5563;
+            border-color: #6b7280;
+            color: white;
+        }
+        .dark .modal-content {
+            background-color: #374151;
+            color: white;
+        }
+        .dark .close {
+            color: #d1d5db;
+        }
+        .dark .close:hover {
+            color: white;
+        }
+
+        @media (max-width: 768px) {
+            .grid-cols-1 { grid-template-columns: 1fr; }
+            #mapaModal, #mapaContainer, #mapaGeneral { height: 300px; }
+        }
+        .auth-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 font-sans text-gray-800 dark:text-gray-200">
+    <div id="sidebar" class="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out dark:bg-gray-800 hidden">
+        <div class="p-6">
+            <h2 class="text-xl font-bold text-green-600 dark:text-green-400"><i class="fas fa-heartbeat mr-2"></i>Sistema de Control de Plagas</h2>
+        </div>
+        <nav class="mt-6">
+            <a href="#" onclick="mostrarSeccion('panelPrincipal')" class="flex items-center px-6 py-3 text-gray-700 hover:bg-green-100 dark:text-gray-300 dark:hover:bg-gray-700"><i class="fas fa-home mr-3"></i>Panel Principal</a>
+            <a href="#" onclick="mostrarSeccion('perfil')" class="flex items-center px-6 py-3 text-gray-700 hover:bg-green-100 dark:text-gray-300 dark:hover:bg-gray-700"><i class="fas fa-user mr-3"></i>Perfil</a>
+            <a href="#" onclick="mostrarSeccion('enfermedades')" class="flex items-center px-6 py-3 text-gray-700 hover:bg-green-100 dark:text-gray-300 dark:hover:bg-gray-700"><i class="fas fa-clipboard-list mr-3"></i>Enfermedades</a>
+            <a href="#" onclick="mostrarSeccion('mapa')" class="flex items-center px-6 py-3 text-gray-700 hover:bg-green-100 dark:text-gray-300 dark:hover:bg-gray-700"><i class="fas fa-map-marker-alt mr-3"></i>Mapa</a>
+            <a id="linkAdmin" href="#" onclick="mostrarSeccion('admin')" class="flex items-center px-6 py-3 text-gray-700 hover:bg-green-100 dark:text-gray-300 dark:hover:bg-gray-700 hidden"><i class="fas fa-cog mr-3"></i>Panel Admin</a>
+            <a href="#" onclick="logout()" class="flex items-center px-6 py-3 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900 mt-auto"><i class="fas fa-sign-out-alt mr-3"></i>Cerrar Sesión</a>
+        </nav>
+    </div>
+
+    <div id="overlay" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
+
+    <div class="md:ml-64 p-6">
+        <header id="mainHeader" class="flex justify-between items-center mb-8 hidden">
+            <div class="flex items-center md:hidden" onclick="toggleSidebar()">
+                <i class="fas fa-bars text-2xl text-green-600 cursor-pointer"></i>
+            </div>
+            <h1 id="tituloSeccion" class="text-3xl font-bold text-gray-800 dark:text-white">Panel Principal</h1>
+            <div class="flex items-center space-x-4">
+                <button onclick="toggleModoOscuro()" class="p-2 rounded-full bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"><i class="fas fa-moon"></i></button>
+                <span id="saludoUsuario" class="text-green-600 font-semibold dark:text-green-400"></span>
+            </div>
+        </header>
+
+        <div id="seccionAuth" class="auth-container">
+            <div class="bg-white rounded-lg shadow-md p-6 max-w-md w-full dark:bg-gray-800">
+                <h1 class="text-2xl font-bold text-gray-900 mb-4 text-center dark:text-white">Bienvenido</h1>
+                <p class="text-gray-600 mb-6 text-center dark:text-gray-400">Inicia sesión o regístrate para gestionar enfermedades</p>
+                <div class="flex justify-center mb-4">
+                    <button id="btnLogin" class="px-4 py-2 bg-green-600 text-white rounded-md mr-2">Login</button>
+                    <button id="btnRegistro" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md dark:bg-gray-600 dark:text-gray-300">Registro</button>
+                </div>
+                <div id="formLogin" class="space-y-4">
+                    <div>
+                        <label for="emailLogin" class="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Email</label>
+                        <input type="email" id="emailLogin" placeholder="tu@email.com" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    </div>
+                    <div>
+                        <label for="passwordLogin" class="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Password</label>
+                        <input type="password" id="passwordLogin" placeholder="Contraseña" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    </div>
+                    <button id="loginBtn" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600">Iniciar Sesión</button>
+                </div>
+                <div id="formRegistro" class="space-y-4 hidden">
+                    <div>
+                        <label for="emailRegistro" class="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Email</label>
+                        <input type="email" id="emailRegistro" placeholder="tu@email.com" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    </div>
+                    <div>
+                        <label for="passwordRegistro" class="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Password</label>
+                        <input type="password" id="passwordRegistro" placeholder="Contraseña (mín. 6 chars)" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    </div>
+                    <button id="registroBtn" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600">Registrarse</button>
+                </div>
+                <p id="mensajeAuth" class="text-center text-sm mt-4 hidden"></p>
+            </div>
+        </div>
+
+        <div id="seccionPrincipal" class="hidden">
+            <section id="panelPrincipal" class="space-y-8">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="bg-white p-6 rounded-lg shadow-md dark:bg-gray-800">
+                        <h3 class="text-lg font-semibold text-gray-800 dark:text-white">Tus Enfermedades</h3>
+                        <p id="statsMisEnfermedades" class="text-3xl font-bold text-green-600 mt-2 dark:text-green-400">0</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-md dark:bg-gray-800">
+                        <h3 class="text-lg font-semibold text-gray-800 dark:text-white">Total Usuarios</h3>
+                        <p id="statsTotalUsuarios" class="text-3xl font-bold text-blue-600 mt-2 dark:text-blue-400">0</p>
+                    </div>
+                    <div id="statsAdmin" class="bg-white p-6 rounded-lg shadow-md dark:bg-gray-800 hidden">
+                        <h3 class="text-lg font-semibold text-gray-800 dark:text-white">Enfermedades Globales</h3>
+                        <p id="statsTotalEnfermedades" class="text-3xl font-bold text-red-600 mt-2 dark:text-red-400">0</p>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md dark:bg-gray-800">
+                    <h3 class="text-lg font-semibold mb-4 text-gray-800 dark:text-white">Notificaciones Recientes</h3>
+                    <ul id="notificaciones" class="space-y-2"></ul>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md dark:bg-gray-800">
+                    <h3 class="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-300">Estadísticas de Gravedad</h3>
+                    <div class="w-full md:w-2/3 mx-auto">
+                        <canvas id="gravedadChart"></canvas>
+                    </div>
+                </div>
+                <button onclick="exportarDatos()" class="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600"><i class="fas fa-download mr-2"></i>Exportar Datos</button>
+            </section>
+
+            <section id="perfil" class="hidden space-y-8">
+                <div class="bg-white p-6 rounded-lg shadow-md dark:bg-gray-800">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Perfil de Usuario</h2>
+                    <div class="flex items-center space-x-6">
+                        <div class="relative">
+                            <img id="fotoPerfil" src="https://via.placeholder.com/150" alt="Foto Perfil" class="w-32 h-32 rounded-full object-cover border-4 border-green-200 dark:border-green-700">
+                            <input type="file" id="inputFotoPerfil" accept="image/*" class="hidden" onchange="cambiarFotoPerfil(event)">
+                            <button onclick="document.getElementById('inputFotoPerfil').click()" class="absolute bottom-0 right-0 bg-green-600 text-white p-2 rounded-full shadow-md"><i class="fas fa-camera"></i></button>
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Nombre Completo</label>
+                            <input type="text" id="nombrePerfil" class="w-full px-3 py-2 border rounded-md mb-4 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                            <label class="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Email</label>
+                            <input type="email" id="emailPerfil" class="w-full px-3 py-2 border rounded-md mb-4 dark:bg-gray-700 dark:border-gray-600 dark:text-white" readonly>
+                            <label class="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Rol</label>
+                            <input type="text" id="rolPerfil" class="w-full px-3 py-2 border rounded-md mb-4 dark:bg-gray-700 dark:border-gray-600 dark:text-white" readonly>
+                            <button onclick="guardarPerfil()" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600">Guardar Cambios</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="enfermedades" class="hidden space-y-8">
+                <div class="bg-white p-6 rounded-lg shadow-md dark:bg-gray-800">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Reporte de Enfermedades</h2>
+                    <form id="formEnfermedad" class="space-y-4">
+                        <div>
+                            <label for="nombreEnfermedad" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre de la Enfermedad</label>
+                            <input type="text" id="nombreEnfermedad" required class="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label for="sintomas" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Síntomas (separados por coma)</label>
+                            <input type="text" id="sintomas" required class="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label for="localizacion" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Localización</label>
+                            <div id="mapaContainer" class="w-full"></div>
+                            <input type="hidden" id="latitud">
+                            <input type="hidden" id="longitud">
+                        </div>
+                        <div>
+                            <label for="gravedad" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Nivel de Gravedad</label>
+                            <select id="gravedad" required class="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                                <option value="bajo">Bajo</option>
+                                <option value="moderado">Moderado</option>
+                                <option value="alto">Alto</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="fotoEnfermedad" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Subir una foto (opcional)</label>
+                            <input type="file" id="fotoEnfermedad" accept="image/*" class="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <button type="submit" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600">Reportar Enfermedad</button>
+                    </form>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md dark:bg-gray-800">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Mis Reportes</h2>
+                    <div class="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4 mb-6">
+                        <input type="text" id="filtroBusqueda" placeholder="Buscar por nombre o síntoma..." class="w-full md:flex-1 px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        <select id="filtroGravedad" class="w-full md:w-auto px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                            <option value="">Filtrar por Gravedad</option>
+                            <option value="bajo">Bajo</option>
+                            <option value="moderado">Moderado</option>
+                            <option value="alto">Alto</option>
+                        </select>
+                    </div>
+                    <div id="listaEnfermedades" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        </div>
+                </div>
+            </section>
+
+            <section id="mapa" class="hidden space-y-8">
+                <div class="bg-white p-6 rounded-lg shadow-md dark:bg-gray-800">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Mapa de Casos Reportados</h2>
+                    <div id="mapaGeneral" class="w-full h-96 rounded-lg"></div>
+                </div>
+            </section>
+            
+            <section id="admin" class="hidden space-y-8">
+                <div class="bg-white p-6 rounded-lg shadow-md dark:bg-gray-800">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Panel de Administración</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <h3 class="text-xl font-semibold text-gray-700 dark:text-gray-300">Gestión de Usuarios</h3>
+                            <ul id="listaUsuarios" class="mt-2 space-y-2"></ul>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold text-gray-700 dark:text-gray-300">Gestión de Reportes</h3>
+                            <ul id="listaReportesAdmin" class="mt-2 space-y-2"></ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div id="modalEditar" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="cerrarModal()">&times;</span>
+            <h2 class="text-xl font-bold mb-4">Editar Reporte de Enfermedad</h2>
+            <form id="formEditarEnfermedad" class="space-y-4">
+                <input type="hidden" id="editId">
+                <div>
+                    <label for="editNombre" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre de la Enfermedad</label>
+                    <input type="text" id="editNombre" required class="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                </div>
+                <div>
+                    <label for="editSintomas" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Síntomas (separados por coma)</label>
+                    <input type="text" id="editSintomas" required class="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                </div>
+                <div>
+                    <label for="editGravedad" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Nivel de Gravedad</label>
+                    <select id="editGravedad" required class="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        <option value="bajo">Bajo</option>
+                        <option value="moderado">Moderado</option>
+                        <option value="alto">Alto</option>
+                    </select>
+                </div>
+                <button type="submit" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600">Guardar Cambios</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="modalMensaje" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="cerrarModal()">&times;</span>
+            <h2 class="text-xl font-bold mb-4">Enviar Mensaje a Usuario</h2>
+            <form id="formMensaje">
+                <input type="hidden" id="mensajeUsuarioId">
+                <p id="mensajeDestinatario" class="text-gray-600 dark:text-gray-400 mb-4"></p>
+                <textarea id="mensajeTexto" rows="4" class="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="Escribe tu mensaje..."></textarea>
+                <button type="submit" class="w-full mt-4 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700">Enviar Mensaje</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="toastContainer" class="fixed top-4 right-4 z-[1001] space-y-2"></div>
+
+    <script>
+        // ====================================================================
+        // CONFIGURACIÓN DE FIREBASE
+        // ====================================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyDh_WYvaQhctfIbKgYseH4TIE1ZjRwKTic",
+            authDomain: "registro-enfermedades.firebaseapp.com",
+            projectId: "registro-enfermedades",
+            storageBucket: "registro-enfermedades.firebasestorage.app",
+            messagingSenderId: "813798124663",
+            appId: "1:813798124663:web:b373e57b9a53bb30a8ea72",
+            measurementId: "G-56191R72N5"
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const USERS_COLLECTION = 'usuarios';
+        const REPORTS_COLLECTION = 'enfermedades';
+
+        // Variables globales de la instancia del mapa
+        let mapaReporte = null;
+        let mapaGeneral = null;
+        let markerReporte = null; // Necesario para mantener el marcador de reporte
+
+        // Función para inicializar el administrador si no existe en Firestore
+        const inicializarAdmin = async (uid, email) => {
+             const adminUserRef = db.collection(USERS_COLLECTION).doc(uid);
+             const adminDoc = await adminUserRef.get();
+
+             if (!adminDoc.exists) {
+                const adminData = {
+                    uid: uid,
+                    email: email,
+                    rol: 'admin',
+                    nombre: 'Administrador',
+                    foto: null,
+                    mensajes: []
+                };
+                await adminUserRef.set(adminData);
+                return adminData;
+             }
+             return adminDoc.data();
+        };
+
+        // Función global para manejar el cambio de sección (para ser llamada por los botones)
+        window.mostrarSeccion = (id) => {
+            // VERIFICACIÓN DE ROL: Si el rol no es admin, no puede acceder a 'admin'.
+            if (id === 'admin' && (!usuarioLogueado || usuarioLogueado.rol !== 'admin')) {
+                mostrarToast('Acceso denegado. Solo administradores.', 'error');
+                return;
+            }
+
+            const secciones = ['panelPrincipal', 'perfil', 'enfermedades', 'mapa', 'admin'];
+            secciones.forEach(sec => {
+                const el = document.getElementById(sec);
+                if (el) {
+                    el.classList.add('hidden');
+                }
+            });
+            
+            document.getElementById(id).classList.remove('hidden');
+            document.getElementById('tituloSeccion').textContent = document.querySelector(`[onclick="mostrarSeccion('${id}')"]`).textContent.trim();
+            
+            // Recargar funciones específicas al cambiar de vista
+            if (id === 'enfermedades') {
+                // Pequeño delay para asegurar que el contenedor se haga visible antes de dibujar el mapa
+                setTimeout(() => {
+                    cargarMapaReporte();
+                    cargarEnfermedadesUsuario();
+                }, 10);
+            } else if (id === 'mapa') {
+                setTimeout(cargarMapaGeneral, 10);
+            } else if (id === 'admin') {
+                cargarUsuarios();
+                cargarReportesAdmin();
+            }
+            
+            window.toggleSidebar(); // Cerrar sidebar en móvil
+        };
+
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Definición de variables globales y elementos del DOM
+            const seccionAuth = document.getElementById('seccionAuth');
+            const seccionPrincipal = document.getElementById('seccionPrincipal');
+            const mainHeader = document.getElementById('mainHeader');
+            const sidebar = document.getElementById('sidebar');
+            const formLogin = document.getElementById('formLogin');
+            const formRegistro = document.getElementById('formRegistro');
+            const btnLogin = document.getElementById('btnLogin');
+            const btnRegistro = document.getElementById('btnRegistro');
+            const loginBtn = document.getElementById('loginBtn');
+            const registroBtn = document.getElementById('registroBtn');
+            const mensajeAuth = document.getElementById('mensajeAuth');
+            const saludoUsuario = document.getElementById('saludoUsuario');
+            const linkAdmin = document.getElementById('linkAdmin');
+            const statsAdmin = document.getElementById('statsAdmin');
+            const listaEnfermedades = document.getElementById('listaEnfermedades');
+            const formEnfermedad = document.getElementById('formEnfermedad');
+            const formEditarEnfermedad = document.getElementById('formEditarEnfermedad');
+            const modalEditar = document.getElementById('modalEditar');
+            const modalMensaje = document.getElementById('modalMensaje');
+            const formMensaje = document.getElementById('formMensaje');
+            const mapaContainer = document.getElementById('mapaContainer');
+            const mapaGeneralDiv = document.getElementById('mapaGeneral');
+            const statsMisEnfermedades = document.getElementById('statsMisEnfermedades');
+            const statsTotalUsuarios = document.getElementById('statsTotalUsuarios');
+            const statsTotalEnfermedades = document.getElementById('statsTotalEnfermedades');
+            const listaUsuarios = document.getElementById('listaUsuarios');
+            const listaReportesAdmin = document.getElementById('listaReportesAdmin');
+            const toastContainer = document.getElementById('toastContainer');
+            const inputLatitud = document.getElementById('latitud');
+            const inputLongitud = document.getElementById('longitud');
+            const filtroBusqueda = document.getElementById('filtroBusqueda');
+            const filtroGravedad = document.getElementById('filtroGravedad');
+            const gravedadChartCanvas = document.getElementById('gravedadChart').getContext('2d');
+            let gravedadChart;
+
+            // Estado de la aplicación
+            let usuarioLogueado = null;
+
+            // =======================================================
+            // LÓGICA CORREGIDA PARA CAMBIO DE FORMULARIO
+            // =======================================================
+            btnLogin.addEventListener('click', () => {
+                formLogin.classList.remove('hidden');
+                formRegistro.classList.add('hidden');
+                btnLogin.classList.add('bg-green-600', 'text-white');
+                btnLogin.classList.remove('bg-gray-300', 'text-gray-700');
+                btnRegistro.classList.add('bg-gray-300', 'text-gray-700');
+                btnRegistro.classList.remove('bg-green-600', 'text-white');
+                mensajeAuth.classList.add('hidden');
+            });
+
+            btnRegistro.addEventListener('click', () => {
+                formRegistro.classList.remove('hidden');
+                formLogin.classList.add('hidden');
+                btnRegistro.classList.add('bg-green-600', 'text-white');
+                btnRegistro.classList.remove('bg-gray-300', 'text-gray-700');
+                btnLogin.classList.add('bg-gray-300', 'text-gray-700');
+                btnLogin.classList.remove('bg-green-600', 'text-white');
+                mensajeAuth.classList.add('hidden');
+            });
+            // =======================================================
+            // FIN DE LÓGICA CORREGIDA
+            // =======================================================
+
+
+            // =======================================================
+            // 1. INICIALIZACIÓN Y AUTHENTICATION (FIREBASE)
+            // =======================================================
+
+            auth.onAuthStateChanged(async (user) => {
+                if (user) {
+                    let userProfile;
+                    if (user.email === 'admin@example.com' && user.uid) {
+                        userProfile = await inicializarAdmin(user.uid, user.email);
+                    } else {
+                        const userDoc = await db.collection(USERS_COLLECTION).doc(user.uid).get();
+                        
+                        if (userDoc.exists) {
+                            userProfile = userDoc.data();
+                        } else {
+                            userProfile = {
+                                uid: user.uid,
+                                email: user.email,
+                                rol: 'usuario',
+                                nombre: user.displayName || 'Usuario',
+                                foto: null,
+                                mensajes: []
+                            };
+                            await db.collection(USERS_COLLECTION).doc(user.uid).set(userProfile);
+                        }
+                    }
+                    usuarioLogueado = { uid: user.uid, ...userProfile };
+                    mostrarContenidoPrincipal();
+
+                } else {
+                    seccionAuth.classList.remove('hidden');
+                    seccionPrincipal.classList.add('hidden');
+                    mainHeader.classList.add('hidden');
+                    sidebar.classList.add('hidden');
+                    document.body.style.display = 'flex';
+                    document.body.classList.add('auth-container');
+                    usuarioLogueado = null;
+                }
+            });
+
+            // Función de Login (Usando Firebase Auth)
+            loginBtn.addEventListener('click', async () => {
+                const email = document.getElementById('emailLogin').value;
+                const password = document.getElementById('passwordLogin').value;
+
+                try {
+                    await auth.signInWithEmailAndPassword(email, password);
+                    mostrarToast('¡Inicio de sesión exitoso!', 'success');
+                } catch (error) {
+                    mostrarMensajeAuth('Error de Login: Credenciales incorrectas.', 'error');
+                }
+            });
+
+            // Función de Registro (Usando Firebase Auth y Firestore)
+            registroBtn.addEventListener('click', async () => {
+                const email = document.getElementById('emailRegistro').value;
+                const password = document.getElementById('passwordRegistro').value;
+
+                if (password.length < 6) {
+                    mostrarMensajeAuth('La contraseña debe tener al menos 6 caracteres.', 'error');
+                    return;
+                }
+
+                try {
+                    await auth.createUserWithEmailAndPassword(email, password);
+                    mostrarMensajeAuth('Registro exitoso. ¡Iniciando sesión!', 'success');
+                } catch (error) {
+                    if (error.code === 'auth/email-already-in-use') {
+                        mostrarMensajeAuth('Este email ya está registrado.', 'error');
+                    } else {
+                        mostrarMensajeAuth(`Error de Registro: ${error.message}`, 'error');
+                    }
+                }
+            });
+
+            // Función para iniciar la interfaz después de la autenticación
+            const mostrarContenidoPrincipal = () => {
+                seccionAuth.classList.add('hidden');
+                seccionPrincipal.classList.remove('hidden');
+                mainHeader.classList.remove('hidden');
+                sidebar.classList.remove('hidden');
+                document.body.classList.remove('auth-container');
+                document.body.style.display = '';
+                
+                saludoUsuario.textContent = `${usuarioLogueado.nombre}`;
+                
+                actualizarEstadisticas();
+                cargarDatosPerfil();
+                
+                if (usuarioLogueado.rol === 'admin') {
+                    linkAdmin.classList.remove('hidden');
+                    statsAdmin.classList.remove('hidden');
+                } else {
+                    linkAdmin.classList.add('hidden');
+                    statsAdmin.classList.add('hidden');
+                }
+                
+                window.mostrarSeccion('panelPrincipal'); // Llama a la función globalmente disponible
+                window.toggleModoOscuroInicial();
+            };
+            
+            // Función para cerrar sesión
+            window.logout = () => {
+                auth.signOut();
+            };
+
+            // Función para alternar la visibilidad de la barra lateral en móviles
+            window.toggleSidebar = () => {
+                const sidebar = document.getElementById('sidebar');
+                const overlay = document.getElementById('overlay');
+                sidebar.classList.toggle('-translate-x-full');
+                overlay.classList.toggle('hidden');
+            };
+
+            // =======================================================
+            // 2. FUNCIONALIDADES DEL PERFIL Y DATOS DE USUARIO
+            // =======================================================
+            
+            const cargarDatosPerfil = () => {
+                const nombrePerfil = document.getElementById('nombrePerfil');
+                const emailPerfil = document.getElementById('emailPerfil');
+                const rolPerfil = document.getElementById('rolPerfil');
+                const fotoPerfil = document.getElementById('fotoPerfil');
+
+                nombrePerfil.value = usuarioLogueado.nombre || '';
+                emailPerfil.value = usuarioLogueado.email;
+                rolPerfil.value = usuarioLogueado.rol;
+                if (usuarioLogueado.foto) {
+                    fotoPerfil.src = usuarioLogueado.foto;
+                } else {
+                    fotoPerfil.src = 'https://via.placeholder.com/150';
+                }
+            };
+
+            window.guardarPerfil = async () => {
+                const nombrePerfil = document.getElementById('nombrePerfil').value;
+                usuarioLogueado.nombre = nombrePerfil;
+                
+                try {
+                    await db.collection(USERS_COLLECTION).doc(usuarioLogueado.uid).update({
+                        nombre: nombrePerfil,
+                        foto: usuarioLogueado.foto
+                    });
+                    saludoUsuario.textContent = `${usuarioLogueado.nombre}`;
+                    mostrarToast('Perfil actualizado con éxito.', 'success');
+                } catch (error) {
+                    mostrarToast(`Error al guardar perfil: ${error.message}`, 'error');
+                }
+            };
+
+            window.cambiarFotoPerfil = (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        document.getElementById('fotoPerfil').src = e.target.result;
+                        usuarioLogueado.foto = e.target.result;
+                        guardarPerfil();
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            // =======================================================
+            // 3. REPORTES (CRUD con Firestore)
+            // =======================================================
+
+            // Funcionalidades de Enfermedades
+            const cargarMapaReporte = () => {
+                // 1. Destruir mapa existente para evitar errores
+                if (mapaReporte !== null) {
+                    mapaReporte.remove();
+                    mapaReporte = null; 
+                }
+                
+                // 2. Crear el mapa
+                mapaReporte = L.map(mapaContainer).setView([0, 0], 2);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(mapaReporte);
+
+                mapaReporte.invalidateSize(); // Forzar el dibujado inmediatamente
+                let markerReporteLocal = null;
+                
+                // 3. Intentar geolocalización
+                if ("geolocation" in navigator) {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            const { latitude, longitude } = position.coords;
+                            mapaReporte.setView([latitude, longitude], 13);
+                            mapaReporte.invalidateSize();
+                            
+                            if (markerReporteLocal) {
+                                mapaReporte.removeLayer(markerReporteLocal);
+                            }
+                            markerReporteLocal = L.marker([latitude, longitude]).addTo(mapaReporte)
+                                .bindPopup("Tu ubicación actual").openPopup();
+                            inputLatitud.value = latitude;
+                            inputLongitud.value = longitude;
+                        },
+                        (error) => {
+                            if (error.code === error.PERMISSION_DENIED) {
+                                mostrarToast("Permiso de ubicación denegado. Haz clic en el mapa para reportar.", "error");
+                            } else {
+                                mostrarToast("No se pudo obtener tu ubicación. Haz clic en el mapa.", "error");
+                            }
+                            mapaReporte.setView([19.4326, -99.1332], 10);
+                            mapaReporte.invalidateSize();
+                        }
+                    );
+                } else {
+                    mostrarToast("Geolocalización no es compatible. Haz clic en el mapa para reportar una ubicación.", "error");
+                    mapaReporte.setView([19.4326, -99.1332], 10);
+                    mapaReporte.invalidateSize();
+                }
+
+                mapaReporte.on('click', (e) => {
+                    const { lat, lng } = e.latlng;
+                    if (markerReporteLocal) {
+                        mapaReporte.removeLayer(markerReporteLocal);
+                    }
+                    markerReporteLocal = L.marker([lat, lng]).addTo(mapaReporte);
+                    inputLatitud.value = lat;
+                    inputLongitud.value = lng;
+                });
+            };
+
+            formEnfermedad.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const nombre = document.getElementById('nombreEnfermedad').value;
+                const sintomas = document.getElementById('sintomas').value.split(',').map(s => s.trim());
+                const gravedad = document.getElementById('gravedad').value;
+                const latitud = parseFloat(inputLatitud.value);
+                const longitud = parseFloat(inputLongitud.value);
+                const fotoInput = document.getElementById('fotoEnfermedad');
+                const file = fotoInput.files[0];
+                
+                if (isNaN(latitud) || isNaN(longitud)) {
+                    mostrarToast('Por favor, selecciona una ubicación en el mapa.', 'error');
+                    return;
+                }
+                
+                const guardarReporte = async (fotoUrl = null) => {
+                    const nuevaEnfermedad = {
+                        usuarioUid: usuarioLogueado.uid,
+                        nombre,
+                        sintomas,
+                        gravedad,
+                        latitud,
+                        longitud,
+                        fecha: firebase.firestore.FieldValue.serverTimestamp(),
+                        foto: fotoUrl || ''
+                    };
+
+                    try {
+                        await db.collection(REPORTS_COLLECTION).add(nuevaEnfermedad);
+                        mostrarToast('Reporte de enfermedad guardado con éxito.', 'success');
+                        formEnfermedad.reset();
+                        
+                        cargarEnfermedadesUsuario();
+                        actualizarEstadisticas();
+                    } catch (error) {
+                        mostrarToast('Error al guardar el reporte: ' + error.message, 'error');
+                    }
+                };
+
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        guardarReporte(e.target.result);
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    guardarReporte();
+                }
+            });
+
+            const cargarEnfermedadesUsuario = async () => {
+                if (!usuarioLogueado) return;
+                
+                try {
+                    const snapshot = await db.collection(REPORTS_COLLECTION)
+                                            .where('usuarioUid', '==', usuarioLogueado.uid)
+                                            .get();
+                    
+                    const misEnfermedades = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    const searchTerm = filtroBusqueda.value.toLowerCase();
+                    const gravedadFilter = filtroGravedad.value.toLowerCase();
+
+                    const filteredEnfermedades = misEnfermedades.filter(e => {
+                        const matchesSearch = e.nombre.toLowerCase().includes(searchTerm) || e.sintomas.some(s => s.toLowerCase().includes(searchTerm));
+                        const matchesGravedad = gravedadFilter === '' || e.gravedad.toLowerCase() === gravedadFilter;
+                        return matchesSearch && matchesGravedad;
+                    });
+                    
+                    listaEnfermedades.innerHTML = '';
+                    if (filteredEnfermedades.length === 0) {
+                        listaEnfermedades.innerHTML = '<p class="text-gray-500 text-center dark:text-gray-400">No se encontraron reportes que coincidan con los filtros.</p>';
+                        return;
+                    }
+
+                    filteredEnfermedades.forEach(enfermedad => {
+                        const card = crearCardEnfermedad(enfermedad, true);
+                        listaEnfermedades.appendChild(card);
+                    });
+
+                } catch (error) {
+                    mostrarToast('Error al cargar reportes: ' + error.message, 'error');
+                }
+            };
+
+            filtroBusqueda.addEventListener('input', cargarEnfermedadesUsuario);
+            filtroGravedad.addEventListener('change', cargarEnfermedadesUsuario);
+
+            const crearCardEnfermedad = (enfermedad, conBotones) => {
+                const card = document.createElement('div');
+                card.className = 'enfermedad-card';
+                const fechaDisplay = enfermedad.fecha && enfermedad.fecha.toDate ? enfermedad.fecha.toDate().toLocaleDateString() : 'Fecha no disponible';
+                
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <h3 class="text-xl font-bold text-gray-800 dark:text-white">${enfermedad.nombre}</h3>
+                        ${conBotones ? `
+                            <div>
+                                <button onclick="abrirModalEditar('${enfermedad.id}')" class="btn-editar"><i class="fas fa-edit"></i></button>
+                                <button onclick="confirmarEliminar('${enfermedad.id}')" class="btn-eliminar"><i class="fas fa-trash"></i></button>
+                            </div>` : ''}
+                    </div>
+                    <p class="text-gray-600 mb-2 dark:text-gray-400"><strong>Fecha:</strong> ${fechaDisplay}</p>
+                    <p class="text-gray-600 mb-2 dark:text-gray-400"><strong>Gravedad:</strong> <span class="font-semibold text-capitalize">${enfermedad.gravedad}</span></p>
+                    <p class="text-gray-600 mb-2 dark:text-gray-400"><strong>Localización:</strong> ${enfermedad.latitud.toFixed(4)}, ${enfermedad.longitud.toFixed(4)}</p>
+                    ${enfermedad.foto ? `<img src="${enfermedad.foto}" class="w-full mt-4 rounded-md">` : ''}
+                    <div class="mt-4">
+                        <h4 class="font-semibold text-gray-700 mb-2 dark:text-gray-300">Síntomas:</h4>
+                        ${enfermedad.sintomas.map(sintoma => `<span class="sintoma-tag">${sintoma}</span>`).join('')}
+                    </div>
+                `;
+                return card;
+            };
+
+            window.confirmarEliminar = (id) => {
+                if (confirm("¿Estás seguro de que quieres eliminar este reporte?")) {
+                    eliminarEnfermedad(id);
+                }
+            };
+
+            const eliminarEnfermedad = async (id) => {
+                try {
+                    await db.collection(REPORTS_COLLECTION).doc(id).delete();
+                    mostrarToast('Reporte eliminado con éxito.', 'success');
+                    cargarEnfermedadesUsuario();
+                    actualizarEstadisticas();
+                } catch (error) {
+                    mostrarToast('Error al eliminar el reporte: ' + error.message, 'error');
+                }
+            };
+            
+            // Funciones del Modal de Edición
+            window.abrirModalEditar = async (id) => {
+                try {
+                    const doc = await db.collection(REPORTS_COLLECTION).doc(id).get();
+                    if (!doc.exists) {
+                        mostrarToast('Reporte no encontrado.', 'error');
+                        return;
+                    }
+                    const enfermedad = { id: doc.id, ...doc.data() };
+                    
+                    document.getElementById('editId').value = enfermedad.id;
+                    document.getElementById('editNombre').value = enfermedad.nombre;
+                    document.getElementById('editSintomas').value = enfermedad.sintomas.join(', ');
+                    document.getElementById('editGravedad').value = enfermedad.gravedad;
+                    modalEditar.style.display = 'block';
+
+                } catch (error) {
+                    mostrarToast('Error al cargar datos para edición: ' + error.message, 'error');
+                }
+            };
+
+            formEditarEnfermedad.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const id = document.getElementById('editId').value;
+                const nombre = document.getElementById('editNombre').value;
+                const sintomas = document.getElementById('editSintomas').value.split(',').map(s => s.trim());
+                const gravedad = document.getElementById('editGravedad').value;
+
+                try {
+                    await db.collection(REPORTS_COLLECTION).doc(id).update({
+                        nombre,
+                        sintomas,
+                        gravedad
+                    });
+                    
+                    mostrarToast('Reporte actualizado con éxito.', 'success');
+                    cerrarModal();
+                    cargarEnfermedadesUsuario();
+                    actualizarEstadisticas();
+                } catch (error) {
+                    mostrarToast('Error al actualizar el reporte: ' + error.message, 'error');
+                }
+            });
+
+            window.cerrarModal = () => {
+                const modals = document.querySelectorAll('.modal');
+                modals.forEach(modal => modal.style.display = 'none');
+            };
+
+            // =======================================================
+            // 4. MAPAS Y ESTADÍSTICAS GLOBALES
+            // =======================================================
+
+            // Funcionalidad del Mapa Global
+            const cargarMapaGeneral = async () => {
+                if (mapaGeneral) {
+                    mapaGeneral.remove();
+                    mapaGeneral = null;
+                }
+                mapaGeneral = L.map(mapaGeneralDiv).setView([19.4326, -99.1332], 4);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(mapaGeneral);
+
+                mapaGeneral.invalidateSize(); // Forzar redibujado
+                
+                try {
+                    const snapshot = await db.collection(REPORTS_COLLECTION).get();
+                    const enfermedades = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    enfermedades.forEach(enfermedad => {
+                        if (enfermedad.latitud && enfermedad.longitud) {
+                            const marker = L.marker([enfermedad.latitud, enfermedad.longitud]).addTo(mapaGeneral);
+                            
+                            const popupContent = `
+                                <h3 class="font-bold">${enfermedad.nombre}</h3>
+                                <p>Gravedad: ${enfermedad.gravedad}</p>
+                                <p>Fecha: ${enfermedad.fecha && enfermedad.fecha.toDate ? enfermedad.fecha.toDate().toLocaleDateString() : 'N/A'}</p>
+                                ${enfermedad.foto ? `<img src="${enfermedad.foto}" class="w-24 h-24 object-cover mt-2 rounded-md">` : ''}
+                            `;
+                            marker.bindPopup(popupContent);
+                        }
+                    });
+                } catch (error) {
+                    mostrarToast('Error al cargar datos del mapa: ' + error.message, 'error');
+                }
+            };
+            
+            // Funcionalidades del Panel de Administración
+            const cargarUsuarios = async () => {
+                try {
+                    const snapshot = await db.collection(USERS_COLLECTION).get();
+                    const usuarios = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    
+                    listaUsuarios.innerHTML = '';
+                    usuarios.forEach(usuario => {
+                        const li = document.createElement('li');
+                        li.className = 'bg-gray-200 p-3 rounded-lg flex justify-between items-center dark:bg-gray-700';
+                        
+                        const botonesGestion = document.createElement('div');
+                        
+                        if (usuario.rol === 'usuario') {
+                            const botonAscender = document.createElement('button');
+                            botonAscender.textContent = 'Ascender a Fumigador';
+                            botonAscender.className = 'bg-green-500 text-white px-2 py-1 rounded-md text-xs hover:bg-green-600 mr-2';
+                            botonAscender.onclick = () => cambiarRol(usuario.uid, 'fumigador');
+                            botonesGestion.appendChild(botonAscender);
+                        } else if (usuario.rol === 'fumigador') {
+                            const botonDegradar = document.createElement('button');
+                            botonDegradar.textContent = 'Degradar a Usuario';
+                            botonDegradar.className = 'bg-red-500 text-white px-2 py-1 rounded-md text-xs hover:bg-red-600';
+                            botonDegradar.onclick = () => cambiarRol(usuario.uid, 'usuario');
+                            botonesGestion.appendChild(botonDegradar);
+                        }
+                        
+                        if (usuario.rol !== 'admin') {
+                            const botonMensaje = document.createElement('button');
+                            botonMensaje.textContent = 'Enviar Mensaje';
+                            botonMensaje.className = 'bg-blue-500 text-white px-2 py-1 rounded-md text-xs hover:bg-blue-600 ml-2';
+                            botonMensaje.onclick = () => abrirModalMensaje(usuario.uid, usuario.email);
+                            botonesGestion.appendChild(botonMensaje);
+
+                            const botonEliminar = document.createElement('button');
+                            botonEliminar.textContent = 'Eliminar';
+                            botonEliminar.className = 'bg-gray-500 text-white px-2 py-1 rounded-md text-xs hover:bg-gray-600 ml-2';
+                            botonEliminar.onclick = () => confirmarEliminarUsuario(usuario.uid, usuario.email);
+                            botonesGestion.appendChild(botonEliminar);
+                        }
+                        
+                        li.innerHTML = `
+                            <span class="font-semibold">${usuario.email}</span>
+                            <span class="text-sm text-gray-600 dark:text-gray-400">Rol: ${usuario.rol}</span>
+                        `;
+                        li.appendChild(botonesGestion);
+                        listaUsuarios.appendChild(li);
+                    });
+                } catch (error) {
+                    mostrarToast('Error al cargar usuarios: ' + error.message, 'error');
+                }
+            };
+
+            window.confirmarEliminarUsuario = async (uid, email) => {
+                if (email === auth.currentUser.email) {
+                    mostrarToast('No puedes eliminar tu propia cuenta de administrador.', 'error');
+                    return;
+                }
+                if (confirm(`¿Estás seguro de que quieres eliminar al usuario ${email}? Esto eliminará su registro en Firestore y todos sus reportes.`)) {
+                    await eliminarUsuario(uid);
+                }
+            };
+
+            const eliminarUsuario = async (uid) => {
+                try {
+                    await db.collection(USERS_COLLECTION).doc(uid).delete();
+
+                    const reportesSnapshot = await db.collection(REPORTS_COLLECTION).where('usuarioUid', '==', uid).get();
+                    const batch = db.batch();
+                    reportesSnapshot.docs.forEach(doc => {
+                        batch.delete(doc.ref);
+                    });
+                    await batch.commit();
+
+                    mostrarToast('Usuario y sus datos eliminados con éxito. (Nota: La eliminación de la cuenta de Auth debe hacerse manualmente en la consola).', 'success');
+                    cargarUsuarios();
+                    actualizarEstadisticas();
+                } catch (error) {
+                    mostrarToast('Error al eliminar el usuario: ' + error.message, 'error');
+                }
+            };
+
+            const cambiarRol = async (uid, nuevoRol) => {
+                try {
+                    await db.collection(USERS_COLLECTION).doc(uid).update({ rol: nuevoRol });
+                    mostrarToast(`Rol cambiado a ${nuevoRol}.`, 'success');
+                    cargarUsuarios();
+                    if (uid === usuarioLogueado.uid) {
+                         const userDoc = await db.collection(USERS_COLLECTION).doc(uid).get();
+                         usuarioLogueado = { uid: uid, ...userDoc.data() };
+                         mostrarContenidoPrincipal();
+                    }
+                } catch (error) {
+                    mostrarToast('Error al cambiar el rol: ' + error.message, 'error');
+                }
+            };
+
+            window.abrirModalMensaje = (uid, email) => {
+                document.getElementById('mensajeUsuarioId').value = uid;
+                document.getElementById('mensajeDestinatario').textContent = `Enviando mensaje a: ${email}`;
+                document.getElementById('modalMensaje').style.display = 'block';
+            };
+
+            formMensaje.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const userId = document.getElementById('mensajeUsuarioId').value;
+                const mensaje = document.getElementById('mensajeTexto').value;
+                const mensajeTextoArea = document.getElementById('mensajeTexto');
+
+                try {
+                    const userDoc = await db.collection(USERS_COLLECTION).doc(userId).get();
+                    if (userDoc.exists) {
+                        const userData = userDoc.data();
+                        const nuevosMensajes = userData.mensajes || [];
+                        nuevosMensajes.push(mensaje);
+                        
+                        await db.collection(USERS_COLLECTION).doc(userId).update({ mensajes: nuevosMensajes });
+                        
+                        mostrarToast('Mensaje enviado con éxito.', 'success');
+                        cerrarModal();
+                        mensajeTextoArea.value = '';
+                    }
+                } catch (error) {
+                    mostrarToast('Error al enviar el mensaje: ' + error.message, 'error');
+                }
+            });
+
+            const cargarReportesAdmin = async () => {
+                try {
+                    const snapshot = await db.collection(REPORTS_COLLECTION).get();
+                    const enfermedades = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    listaReportesAdmin.innerHTML = '';
+                    enfermedades.forEach(enfermedad => {
+                        const card = crearCardEnfermedad(enfermedad, false);
+                        card.innerHTML += `
+                            <div class="mt-4 text-right">
+                                <button onclick="confirmarEliminarAdmin('${enfermedad.id}')" class="btn-eliminar"><i class="fas fa-trash"></i> Eliminar</button>
+                            </div>
+                        `;
+                        listaReportesAdmin.appendChild(card);
+                    });
+                } catch (error) {
+                    mostrarToast('Error al cargar reportes de administración: ' + error.message, 'error');
+                }
+            };
+
+            window.confirmarEliminarAdmin = (id) => {
+                if (confirm("¿Estás seguro de que quieres eliminar este reporte global?")) {
+                    eliminarEnfermedadAdmin(id);
+                }
+            };
+
+            const eliminarEnfermedadAdmin = async (id) => {
+                try {
+                    await db.collection(REPORTS_COLLECTION).doc(id).delete();
+                    mostrarToast('Reporte global eliminado con éxito.', 'success');
+                    cargarReportesAdmin();
+                    actualizarEstadisticas();
+                } catch (error) {
+                    mostrarToast('Error al eliminar el reporte: ' + error.message, 'error');
+                }
+            };
+
+            // Funcionalidades del Panel Principal
+            const actualizarEstadisticas = async () => {
+                try {
+                    const reportesSnapshot = await db.collection(REPORTS_COLLECTION).get();
+                    const enfermedades = reportesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    const usuariosSnapshot = await db.collection(USERS_COLLECTION).get();
+                    const usuarios = usuariosSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    const misEnfermedades = enfermedades.filter(e => e.usuarioUid === usuarioLogueado.uid);
+                    
+                    statsMisEnfermedades.textContent = misEnfermedades.length;
+                    statsTotalUsuarios.textContent = usuarios.length;
+                    statsTotalEnfermedades.textContent = enfermedades.length;
+                    
+                    // Cargar gráfico de gravedad
+                    actualizarGraficoGravedad(enfermedades);
+                    
+                    // Mostrar mensajes del administrador al fumigador
+                    const notificacionesDiv = document.getElementById('notificaciones');
+                    notificacionesDiv.innerHTML = '';
+                    
+                    const usuarioActualizado = usuarios.find(u => u.uid === usuarioLogueado.uid);
+                    if (usuarioActualizado && usuarioActualizado.mensajes && usuarioActualizado.mensajes.length > 0) {
+                        usuarioActualizado.mensajes.forEach(mensaje => {
+                            const li = document.createElement('li');
+                            li.className = 'bg-blue-100 p-3 rounded-lg dark:bg-blue-900 dark:text-blue-100 cursor-pointer';
+                            li.innerHTML = `<p class="font-semibold">Mensaje del administrador:</p><p class="text-sm">${mensaje}</p>`;
+                            notificacionesDiv.appendChild(li);
+                        });
+                    }
+                } catch (error) {
+                    mostrarToast('Error al cargar estadísticas: ' + error.message, 'error');
+                }
+            };
+            
+            const actualizarGraficoGravedad = (enfermedades) => {
+                const gravedadCounts = { 'bajo': 0, 'moderado': 0, 'alto': 0 };
+                enfermedades.forEach(e => {
+                    if (e.gravedad && gravedadCounts[e.gravedad]) {
+                        gravedadCounts[e.gravedad]++;
+                    }
+                });
+
+                const data = {
+                    labels: ['Bajo', 'Moderado', 'Alto'],
+                    datasets: [{
+                        label: 'Número de Reportes',
+                        data: [gravedadCounts['bajo'], gravedadCounts['moderado'], gravedadCounts['alto']],
+                        backgroundColor: [
+                            '#10B981',
+                            '#F59E0B',
+                            '#EF4444'
+                        ],
+                        hoverOffset: 4
+                    }]
+                };
+
+                const config = {
+                    type: 'pie',
+                    data: data,
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                                labels: {
+                                    color: document.body.classList.contains('dark') ? '#d1d5db' : '#111827'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Distribución de Gravedad de Reportes',
+                                color: document.body.classList.contains('dark') ? '#d1d5db' : '#111827'
+                            }
+                        }
+                    }
+                };
+
+                if (gravedadChart) {
+                    gravedadChart.destroy();
+                }
+                gravedadChart = new Chart(gravedadChartCanvas, config);
+            };
+
+            // Funcionalidad para exportar datos
+            window.exportarDatos = async () => {
+                try {
+                    const reportesSnapshot = await db.collection(REPORTS_COLLECTION).get();
+                    const enfermedades = reportesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), fecha: doc.data().fecha.toDate().toISOString() }));
+                    
+                    const usuariosSnapshot = await db.collection(USERS_COLLECTION).get();
+                    const usuarios = usuariosSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    const data = { usuarios, enfermedades };
+                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+                    const downloadAnchorNode = document.createElement('a');
+                    downloadAnchorNode.setAttribute("href", dataStr);
+                    downloadAnchorNode.setAttribute("download", "datos_monitoreo_firebase.json");
+                    document.body.appendChild(downloadAnchorNode);
+                    downloadAnchorNode.click();
+                    downloadAnchorNode.remove();
+                    mostrarToast('Datos exportados con éxito.', 'success');
+
+                } catch (error) {
+                    mostrarToast('Error al exportar datos: ' + error.message, 'error');
+                }
+            };
+
+            // --- Utilidades Generales ---
+
+            // Mensajes de notificación (Toasts)
+            const mostrarToast = (message, type) => {
+                const toast = document.createElement('div');
+                toast.className = `toast ${type}`;
+                toast.textContent = message;
+                toastContainer.appendChild(toast);
+                setTimeout(() => {
+                    toast.remove();
+                }, 3000);
+            };
+
+            // Mensajes de autenticación
+            const mostrarMensajeAuth = (message, type) => {
+                mensajeAuth.textContent = message;
+                mensajeAuth.classList.remove('hidden');
+                mensajeAuth.className = `text-center text-sm mt-4 ${type === 'success' ? 'text-green-600' : 'text-red-600'}`;
+            };
+
+            // Dark mode
+            window.toggleModoOscuro = () => {
+                const body = document.body;
+                body.classList.toggle('dark');
+                const isDark = body.classList.contains('dark');
+                localStorage.setItem('darkMode', isDark);
+                if (gravedadChart) {
+                    gravedadChart.options.plugins.legend.labels.color = isDark ? '#d1d5db' : '#111827';
+                    gravedadChart.options.plugins.title.color = isDark ? '#d1d5db' : '#111827';
+                    gravedadChart.update();
+                }
+            };
+
+            const toggleModoOscuroInicial = () => {
+                const isDark = localStorage.getItem('darkMode') === 'true';
+                if (isDark) {
+                    document.body.classList.add('dark');
+                } else {
+                    document.body.classList.remove('dark');
+                }
+            };
+        });
+    </script>
+</body>
+</html>
